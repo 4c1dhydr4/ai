@@ -211,3 +211,5 @@ __marimo__/
 s3/
 media/
 tmp/
+var/
+documents/

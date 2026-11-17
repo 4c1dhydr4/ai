@@ -11,7 +11,7 @@ from transformers import (
 class QwenService:
 	"""Singleton-style Qwen inference service."""
 
-	MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+	MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 
 	SYSTEM_PROMPT = (
 		"You are a helpful AI assistant named Loki. "

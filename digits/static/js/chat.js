@@ -49,21 +49,81 @@ function requiresMarkdown(content) {
     return patterns.some(pattern => pattern.test(content));
 }
 
+// RAG
+function renderMessageSources(container, sources) {
+
+    if (!sources || !sources.length) {
+        return;
+    }
+
+    const sourcesContainer = document.createElement("div");
+    sourcesContainer.className = "message-sources";
+
+    const heading = document.createElement("div");
+    heading.className = "small text-secondary fw-semibold mb-2";
+    heading.innerHTML = `
+        <i class="bi bi-journal-text me-1"></i>
+        SOURCES
+    `;
+
+    sourcesContainer.appendChild(heading);
+
+    sources.forEach(source => {
+
+        const item = document.createElement("div");
+        item.className =
+            "source-item d-flex align-items-center gap-2 mb-2";
+
+        const icon = document.createElement("i");
+        icon.className =
+            "bi bi-file-earmark-text text-secondary";
+
+        const details = document.createElement("div");
+        details.className = "flex-grow-1";
+
+        const title = document.createElement("div");
+        title.className = "small fw-semibold";
+        title.textContent = source.title || "Untitled document";
+
+        const metadata = document.createElement("div");
+        metadata.className = "text-secondary small";
+
+        const location = source.page
+            ? `Page ${source.page}`
+            : `Chunk ${source.chunk_index}`;
+
+        metadata.textContent =
+            `${location} · Similarity ${Number(source.score).toFixed(2)}`;
+
+        details.appendChild(title);
+        details.appendChild(metadata);
+
+        item.appendChild(icon);
+        item.appendChild(details);
+
+        sourcesContainer.appendChild(item);
+
+    });
+
+    container.appendChild(sourcesContainer);
+}
+
 // Render all messages already loaded by Django.
 function renderExistingMessages() {
 
     const messages = chatMessages.querySelectorAll(
-        ".message-content"
+        ".message.assistant .message-content"
     );
 
     messages.forEach((message) => {
 
         const content = message.textContent;
 
-        // Render Markdown only for assistant messages.
-        if (message.closest(".message.assistant")) {
-            renderMarkdown(message, content);
-        }
+        // Apply Markdown styling to every assistant message.
+        message.classList.add("assistant-message");
+
+        // Convert Markdown into HTML when necessary.
+        renderMarkdown(message, content);
 
     });
 
@@ -129,6 +189,8 @@ chatForm.addEventListener("submit", async function (event) {
     const assistantBubble = createMessage("assistant");
 
     assistantBubble.classList.add("assistant-message");
+
+    scrollToBottom();
 
     const formData = new FormData(chatForm);
 
@@ -202,6 +264,12 @@ chatForm.addEventListener("submit", async function (event) {
 
         }
 
+        const ragUsed = response.headers.get("X-RAG-Used") === "true";
+
+        const sources = JSON.parse(
+            response.headers.get("X-RAG-Sources") || "[]"
+        );
+
         const reader = response.body.getReader();
 
         const decoder = new TextDecoder("utf-8");
@@ -233,6 +301,13 @@ chatForm.addEventListener("submit", async function (event) {
             assistantBubble,
             assistantResponse
         );
+
+        if (ragUsed) {
+            renderMessageSources(
+                assistantBubble.closest(".message"),
+                sources
+            );
+        }
 
         scrollToBottom();
 

@@ -1,4 +1,5 @@
 
+import json
 import logging
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -7,15 +8,20 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
 
-from .models import ChatConversation, ChatMessage
-from .services.llm import get_llm
+from chat.models import ChatConversation, ChatMessage
+
+from rag.services.retriever import retrieve_context
+from rag.services.prompting import augment_messages_with_rag
+
+# Import your existing LLM initialization function.
+from chat.services.llm import get_llm
 
 
 logger = logging.getLogger(__name__)
 
 
 class ChatView(LoginRequiredMixin, View):
-	"""Chat interface and message processing."""
+	"""Chat interface with Retrieval-Augmented Generation."""
 
 	template_name = "chat/chat.html"
 
@@ -32,15 +38,8 @@ class ChatView(LoginRequiredMixin, View):
 	def get(self, request, pk=None):
 		conversation = self.get_conversation(pk)
 
-		messages = (
-			conversation.messages.all()
-			if conversation
-			else []
-		)
-
 		context = {
 			"conversation": conversation,
-			"messages": messages,
 			"conversations": ChatConversation.objects.filter(
 				user=request.user
 			),
@@ -52,7 +51,6 @@ class ChatView(LoginRequiredMixin, View):
 			context,
 		)
 
-
 	def post(self, request, pk=None):
 		conversation = self.get_conversation(pk)
 
@@ -61,9 +59,11 @@ class ChatView(LoginRequiredMixin, View):
 		).strip()
 
 		if not user_message:
-			return redirect(
-				"chat:conversation", pk=pk
-			) if pk else redirect("chat:index")
+			return (
+				redirect("chat:conversation", pk=pk)
+				if pk
+				else redirect("chat:index")
+			)
 
 		# Create a conversation if necessary.
 		if conversation is None:
@@ -79,7 +79,7 @@ class ChatView(LoginRequiredMixin, View):
 			content=user_message,
 		)
 
-		# Prepare the conversation history.
+		# Load the most recent conversation messages.
 		history = list(
 			conversation.messages.order_by(
 				"-created_at", "-pk"
@@ -88,18 +88,76 @@ class ChatView(LoginRequiredMixin, View):
 
 		history.reverse()
 
+		# --------------------------------------------------
+		# RAG: Retrieve relevant document chunks.
+		# --------------------------------------------------
+
+		retrieval = {
+			"context": "",
+			"sources": [],
+			"results": [],
+		}
+
+		try:
+			retrieval = retrieve_context(
+				query=user_message,
+				user=request.user,
+				conversation=conversation,
+				top_k=5,
+				min_score=0.0,  # Temporary diagnostic setting
+			)
+
+			logger.warning(
+				"RAG DEBUG | conversation=%s | sources=%s | context_length=%s",
+				conversation.pk,
+				len(retrieval["sources"]),
+				len(retrieval["context"]),
+			)
+
+		except Exception:
+			logger.exception(
+				"RAG RETRIEVAL ERROR | conversation=%s",
+				conversation.pk,
+			)
+
+		# --------------------------------------------------
+		# RAG: Augment the conversation history.
+		# --------------------------------------------------
+
+		try:
+			llm_history = augment_messages_with_rag(
+				messages=history,
+				context=retrieval["context"],
+			)
+
+		except Exception:
+			logger.exception(
+				"RAG prompt augmentation failed."
+			)
+
+			# Fall back to the original conversation history.
+			llm_history = history
+			retrieval["sources"] = []
+
+		# --------------------------------------------------
+		# Stream the LLM response.
+		# --------------------------------------------------
+
 		def stream_response():
 			response_parts = []
 
 			try:
 				llm = get_llm()
 
-				for chunk in llm.generate_stream(history):
+				for chunk in llm.generate_stream(llm_history):
 					response_parts.append(chunk)
 					yield chunk
 
 			except Exception:
-				logger.exception("Qwen streaming failed.")
+				logger.exception(
+					"Qwen streaming failed for conversation %s.",
+					conversation.pk,
+				)
 
 				error_message = (
 					"\n\n[Sorry, an error occurred during generation.]"
@@ -110,24 +168,48 @@ class ChatView(LoginRequiredMixin, View):
 
 			finally:
 				# Save the completed or partially generated response.
-				ChatMessage.objects.create(
-					conversation=conversation,
-					role=ChatMessage.Role.ASSISTANT,
-					content="".join(response_parts),
-				)
+				try:
+					ChatMessage.objects.create(
+						conversation=conversation,
+						role=ChatMessage.Role.ASSISTANT,
+						content="".join(response_parts),
+						metadata={
+							"rag_used": bool(retrieval["sources"]),
+							"sources": retrieval["sources"],
+						},
+					)
 
-				conversation.save()
+					conversation.save()
+
+				except Exception:
+					logger.exception(
+						"Failed to persist assistant response."
+					)
 
 		response = StreamingHttpResponse(
 			stream_response(),
 			content_type="text/plain; charset=utf-8",
 		)
 
+		# --------------------------------------------------
+		# Response metadata.
+		# --------------------------------------------------
+
 		response["Cache-Control"] = "no-cache, no-transform"
 		response["X-Accel-Buffering"] = "no"
+
 		response["X-Conversation-URL"] = reverse(
 			"chat:conversation",
 			kwargs={"pk": conversation.pk},
+		)
+
+		response["X-RAG-Used"] = (
+			"true" if retrieval["sources"] else "false"
+		)
+
+		response["X-RAG-Sources"] = json.dumps(
+			retrieval["sources"],
+			ensure_ascii=True,
 		)
 
 		return response

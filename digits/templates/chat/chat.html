@@ -1,28 +1,18 @@
-
+{% extends "base/base.html" %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <title>Loki AI</title>
+{% block title %}Loki AI{% endblock %}
 
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        rel="stylesheet"
-    >
-    <link rel="stylesheet" type="text/css" href="{% static 'css/chat.css' %}">
-</head>
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/chat.css' %}">
+{% endblock %}
 
-<body>
+{% block content %}
 
 <div class="chat-layout">
 
     <!-- Sidebar -->
     <aside class="chat-sidebar">
-
-        <h5 class="mb-4">Loki AI</h5>
 
         <a href="{% url 'chat:index' %}"
            class="btn btn-light text-dark w-100 mb-4">
@@ -57,20 +47,51 @@
             </strong>
 
             <div class="small text-secondary">
-                Qwen2.5-1.5B-Instruct · Local GPU inference
+                Qwen2.5-1.5B-Instruct · Local <b>GTX 1050ti GPU</b> inference
             </div>
         </header>
 
         <!-- Messages -->
         <section class="chat-messages" id="chatMessages">
 
-            {% for message in messages %}
+            {% for message in conversation.messages.all %}
 
                 <div class="message {{ message.role }}">
-
-                    <div class="message-content">
+                    <div class="message-content {% if message.role == 'assistant' %}assistant-message{% endif %}">
                         {{ message.content }}
                     </div>
+
+                    {% if message.role == "assistant" and message.metadata.sources %}
+                    <div class="message-sources mt-3">
+                        <div class="small text-secondary fw-semibold mb-2">
+                            <i class="bi bi-journal-text me-1"></i>
+                            SOURCES
+                        </div>
+                        {% for source in message.metadata.sources %}
+                            <div class="source-item d-flex align-items-center gap-2 mb-2">
+
+                                <i class="bi bi-file-earmark-text text-secondary"></i>
+
+                                <div class="flex-grow-1">
+                                    <div class="small fw-semibold">
+                                        {{ source.title }}
+                                    </div>
+
+                                    <div class="text-secondary small">
+                                        {% if source.page %}
+                                            Page {{ source.page }}
+                                        {% else %}
+                                            Chunk {{ source.chunk_index }}
+                                        {% endif %}
+
+                                        · Similarity {{ source.score|floatformat:2 }}
+                                    </div>
+                                </div>
+
+                            </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
 
                 </div>
 
@@ -78,10 +99,7 @@
 
                 <div class="empty-state">
                     <h3>What would you like to explore?</h3>
-
-                    <p>
-                        Ask Loki anything.
-                    </p>
+                    <p>Ask Loki anything.</p>
                 </div>
 
             {% endfor %}
@@ -89,14 +107,14 @@
         </section>
 
         <!-- Input -->
-        <footer class="chat-input-container">
+        <div class="chat-input-container">
 
             <form
                 method="POST"
                 action="{% if conversation %}{% url 'chat:conversation' conversation.pk %}{% else %}{% url 'chat:index' %}{% endif %}"
                 class="chat-input-form"
                 id="chatForm"
-                autocomplete=off
+                autocomplete="off"
             >
                 {% csrf_token %}
 
@@ -107,9 +125,9 @@
                         id="messageInput"
                         class="form-control chat-input"
                         placeholder="Message Qwen..."
-                        rows="1"
                         required
                     >
+
                     <button
                         type="submit"
                         id="sendButton"
@@ -126,14 +144,17 @@
 
             </form>
 
-        </footer>
+        </div>
 
     </main>
 
 </div>
+
+{% endblock %}
+
+
+{% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
 <script src="{% static 'js/chat.js' %}"></script>
-
-</body>
-</html>
+{% endblock %}

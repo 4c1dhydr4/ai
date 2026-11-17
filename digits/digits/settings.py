@@ -23,6 +23,7 @@ DJANGO_APPS = (
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',
 )
 
 THIRD_PARTY_APPS = (
@@ -32,8 +33,10 @@ THIRD_PARTY_APPS = (
 )
 
 LOCAL_APPS =  (
+    'core',
     'classifier',
     'chat',
+    'rag',
 )
 
 INSTALLED_APPS = THIRD_PARTY_APPS + DJANGO_APPS + LOCAL_APPS
@@ -53,7 +56,7 @@ ROOT_URLCONF = 'digits.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': ['templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -70,8 +73,12 @@ WSGI_APPLICATION = 'digits.wsgi.application'
 # Just for initial development, then will switch to PostgreSQL
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME'),
+        'USER': config('DB_USER'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST'),
+        'PORT': config('DB_PORT', cast=int),
     }
 }
 
@@ -91,6 +98,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+LOGIN_URL = '/admin/login/'
+LOGIN_REDIRECT_URL = '/admin/'
+LOGOUT_REDIRECT_URL = '/admin/login/'
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
@@ -175,3 +185,9 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SECURE_HSTS_SECONDS = 3600
+
+# RAG
+RAG_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+RAG_EMBEDDING_DEVICE = "cpu"
+RAG_EMBEDDING_DIMENSION = 384
+RAG_FAISS_INDEX_DIR = BASE_DIR / "var" / "rag_indexes"

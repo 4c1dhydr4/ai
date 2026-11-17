@@ -1,0 +1,10 @@
+from django.views.generic import TemplateView
+
+
+class IndexView(TemplateView):
+    template_name = "core/index.html"
+
+    extra_context = {
+        "page_title": "AI Platform",
+        "page_description": "Your intelligent AI workspace.",
+    }

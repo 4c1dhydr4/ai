@@ -7,7 +7,6 @@ app_name = "chat"
 
 urlpatterns = [
     path("", ChatView.as_view(), name="index"),
-
     path(
         "<int:pk>/",
         ChatView.as_view(),
